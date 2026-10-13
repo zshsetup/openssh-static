@@ -20,7 +20,8 @@ compiled-in path.
 
 `openssl` is another name of the binary, with TLS (`s_client`, `s_server`) but without the
 commands for OCSP, time stamps, CMS, DSA, and the legacy ciphers (Blowfish, CAST, RC2, RC4, IDEA,
-SEED, Camellia, and ARIA). Its configuration and certificates are in `/etc/ssl`.
+SEED, Camellia, and ARIA). Its configuration and certificates are in `/etc/ssl`; hosts without
+`/etc/ssl/openssl.cnf` get `share/openssl/openssl.cnf` of the archive, which `openssl req` needs.
 
 `sshd` is built, but not configured: it needs a host key and a config file (`-h`, `-f`). It starts
 `sshd-session` and `sshd-auth` from the prefix it was compiled for, so point it to `libexec` with
@@ -54,6 +55,7 @@ Output is installed under `dist/`:
   `openssl`)
 - `dist/sbin/sshd`: a symlink for the server
 - `dist/libexec`: symlinks for the parts of `sshd` and the helper programs of the suite
+- `dist/share/openssl/openssl.cnf`: the configuration of `openssl` for hosts without one
 - `dist/share/man`: the man pages
 
 Pass `--static` for the fully static musl build on Linux (output in `dist-static/`), `--clean` to

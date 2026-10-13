@@ -175,12 +175,50 @@ echo ">>> openssh"
     done
     echo '};'
     cat <<'EOF'
+#include <limits.h>
+#include <stdlib.h>
+#include <unistd.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+
+/* openssl req needs a config file, which hosts without OpenSSL lack, so it falls back to the one
+   in share/openssl of the package, found from the real path of this binary in bin */
+static void default_config(void) {
+  char exe[PATH_MAX], real[PATH_MAX], conf[PATH_MAX], *slash;
+  if (getenv("OPENSSL_CONF") || access("/etc/ssl/openssl.cnf", R_OK) == 0)
+    return;
+#ifdef __APPLE__
+  uint32_t size = sizeof(exe);
+  if (_NSGetExecutablePath(exe, &size) != 0)
+    return;
+#else
+  ssize_t length = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+  if (length <= 0)
+    return;
+  exe[length] = '\0';
+#endif
+  if (!realpath(exe, real))
+    return;
+  for (int level = 0; level < 2; level++) {
+    if (!(slash = strrchr(real, '/')))
+      return;
+    *slash = '\0';
+  }
+  snprintf(conf, sizeof(conf), "%s/share/openssl/openssl.cnf", real);
+  if (access(conf, R_OK) == 0)
+    setenv("OPENSSL_CONF", conf, 0);
+}
+
 int main(int argc, char **argv) {
   const char *name = argc > 0 ? strrchr(argv[0], '/') : NULL;
   name = name ? name + 1 : (argc > 0 ? argv[0] : "");
   for (unsigned i = 0; i < sizeof(tools) / sizeof(tools[0]); i++)
-    if (strcmp(name, tools[i].name) == 0)
+    if (strcmp(name, tools[i].name) == 0) {
+      if (strcmp(name, "openssl") == 0)
+        default_config();
       return tools[i].main(argc, argv);
+    }
   fprintf(stderr, "multi-call OpenSSH binary, run it as one of its tools by name\n");
   return 1;
 }
@@ -248,6 +286,8 @@ EOF
     esac
   done
 
+  mkdir -p "$DIST/share/openssl"
+  cp "$OSSL/apps/openssl.cnf" "$DIST/share/openssl/openssl.cnf"
   for section in 1 5 8; do
     mkdir -p "$DIST/share/man/man$section"
     cp ./*."$section" "$DIST/share/man/man$section/"
