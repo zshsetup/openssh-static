@@ -66,7 +66,7 @@ AuthorizedKeysFile $TMP/authorized_keys
 PidFile $TMP/sshd.pid
 StrictModes no
 PasswordAuthentication no
-Subsystem sftp internal-sftp
+Subsystem sftp $DIST/libexec/sftp-server
 EOF
   # sshd starts its parts from the compiled-in prefix, which the archive is not at
   "$DIST/sbin/sshd" -f "$TMP/sshd_config" -o "SshdSessionPath=$DIST/libexec/sshd-session" \

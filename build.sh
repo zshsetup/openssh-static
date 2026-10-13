@@ -163,13 +163,13 @@ echo ">>> openssh"
   TOOLS="$TOOLS ssh-sk-helper:SKHELPER_OBJS"
   {
     echo 'int main(int, char **);'
-    for entry in $TOOLS; do echo "int ${entry%%:*}_main(int, char **);" | tr - _; done
+    for entry in $TOOLS; do echo "int ${entry%%:*}_multi_main(int, char **);" | tr - _; done
     echo '#include <string.h>'
     echo '#include <stdio.h>'
     echo 'static const struct { const char *name; int (*main)(int, char **); } tools[] = {'
     for entry in $TOOLS; do
       name="${entry%%:*}"
-      echo "  { \"$name\", $(echo "$name" | tr - _)_main },"
+      echo "  { \"$name\", $(echo "$name" | tr - _)_multi_main },"
     done
     echo '};'
     cat <<'EOF'
@@ -187,7 +187,7 @@ EOF
   objects=""
   for entry in $TOOLS; do
     name="${entry%%:*}"
-    sym="$(echo "$name" | tr - _)_main"
+    sym="$(echo "$name" | tr - _)_multi_main"
     # shellcheck disable=SC2046
     if [ "$OS" = Linux ]; then
       ld -r -o "$MULTI/$name.o" $(var "${entry##*:}") -L. -Lopenbsd-compat \
