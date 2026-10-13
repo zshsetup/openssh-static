@@ -146,34 +146,33 @@ echo ">>> openssh"
   rm -rf "$DIST"
   mkdir -p "$DIST/bin" "$DIST/sbin" "$DIST/libexec"
 
-  if [ "$OS" = Linux ]; then
-    # one binary with all tools, which links libcrypto and zlib once; the tools are symlinks to it
-    # and run by the name they are called with. Each tool is linked to a single object with the
-    # parts of libssh it needs, whose symbols are local but its main, as the tools define globals
-    # with the same names, and libssh calls functions that each tool defines in its own way.
-    MULTI="$WORK/multi"
-    rm -rf "$MULTI"
-    mkdir -p "$MULTI"
-    # shellcheck disable=SC2016
-    printf 'print-%%:\n\t@echo $($*)\n' >"$MULTI/print.mk"
-    var() { "$MAKE" -s -f Makefile -f "$MULTI/print.mk" "print-$1" 2>/dev/null; }
-    TOOLS="ssh:SSHOBJS sshd:SSHDOBJS sshd-session:SSHD_SESSION_OBJS sshd-auth:SSHD_AUTH_OBJS"
-    TOOLS="$TOOLS scp:SCP_OBJS sftp:SFTP_OBJS sftp-server:SFTPSERVER_OBJS ssh-add:SSHADD_OBJS"
-    TOOLS="$TOOLS ssh-agent:SSHAGENT_OBJS ssh-keygen:SSHKEYGEN_OBJS ssh-keyscan:SSHKEYSCAN_OBJS"
-    TOOLS="$TOOLS ssh-keysign:SSHKEYSIGN_OBJS ssh-pkcs11-helper:P11HELPER_OBJS"
-    TOOLS="$TOOLS ssh-sk-helper:SKHELPER_OBJS"
-    {
-      echo 'int main(int, char **);'
-      for entry in $TOOLS; do echo "int ${entry%%:*}_main(int, char **);" | tr - _; done
-      echo '#include <string.h>'
-      echo '#include <stdio.h>'
-      echo 'static const struct { const char *name; int (*main)(int, char **); } tools[] = {'
-      for entry in $TOOLS; do
-        name="${entry%%:*}"
-        echo "  { \"$name\", $(echo "$name" | tr - _)_main },"
-      done
-      echo '};'
-      cat <<'EOF'
+  # one binary with all tools, which links libcrypto and zlib once; the tools are symlinks to it
+  # and run by the name they are called with. Each tool is linked to a single object with the
+  # parts of libssh it needs, whose symbols are local but its main, as the tools define globals
+  # with the same names, and libssh calls functions that each tool defines in its own way.
+  MULTI="$WORK/multi"
+  rm -rf "$MULTI"
+  mkdir -p "$MULTI"
+  # shellcheck disable=SC2016
+  printf 'print-%%:\n\t@echo $($*)\n' >"$MULTI/print.mk"
+  var() { "$MAKE" -s -f Makefile -f "$MULTI/print.mk" "print-$1" 2>/dev/null; }
+  TOOLS="ssh:SSHOBJS sshd:SSHDOBJS sshd-session:SSHD_SESSION_OBJS sshd-auth:SSHD_AUTH_OBJS"
+  TOOLS="$TOOLS scp:SCP_OBJS sftp:SFTP_OBJS sftp-server:SFTPSERVER_OBJS ssh-add:SSHADD_OBJS"
+  TOOLS="$TOOLS ssh-agent:SSHAGENT_OBJS ssh-keygen:SSHKEYGEN_OBJS ssh-keyscan:SSHKEYSCAN_OBJS"
+  TOOLS="$TOOLS ssh-keysign:SSHKEYSIGN_OBJS ssh-pkcs11-helper:P11HELPER_OBJS"
+  TOOLS="$TOOLS ssh-sk-helper:SKHELPER_OBJS"
+  {
+    echo 'int main(int, char **);'
+    for entry in $TOOLS; do echo "int ${entry%%:*}_main(int, char **);" | tr - _; done
+    echo '#include <string.h>'
+    echo '#include <stdio.h>'
+    echo 'static const struct { const char *name; int (*main)(int, char **); } tools[] = {'
+    for entry in $TOOLS; do
+      name="${entry%%:*}"
+      echo "  { \"$name\", $(echo "$name" | tr - _)_main },"
+    done
+    echo '};'
+    cat <<'EOF'
 int main(int argc, char **argv) {
   const char *name = argc > 0 ? strrchr(argv[0], '/') : NULL;
   name = name ? name + 1 : (argc > 0 ? argv[0] : "");
@@ -184,37 +183,46 @@ int main(int argc, char **argv) {
   return 1;
 }
 EOF
-    } >"$MULTI/multi.c"
-    objects=""
-    for entry in $TOOLS; do
-      name="${entry%%:*}"
-      sym="$(echo "$name" | tr - _)_main"
-      # shellcheck disable=SC2046
+  } >"$MULTI/multi.c"
+  objects=""
+  for entry in $TOOLS; do
+    name="${entry%%:*}"
+    sym="$(echo "$name" | tr - _)_main"
+    # shellcheck disable=SC2046
+    if [ "$OS" = Linux ]; then
       ld -r -o "$MULTI/$name.o" $(var "${entry##*:}") -L. -Lopenbsd-compat \
         --start-group -lssh -lopenbsd-compat --end-group
       # the thunks of retpoline are shared by name
       objcopy --redefine-sym "main=$sym" --keep-global-symbol="$sym" \
         --keep-global-symbol=__llvm_retpoline_r11 "$MULTI/$name.o"
-      objects="$objects $MULTI/$name.o"
-    done
-    # shellcheck disable=SC2046,SC2086
-    $CC -O2 -o "$DIST/bin/ssh" "$MULTI/multi.c" $objects $LDSTATIC -L"$PREFIX/lib" \
-      $GC_LDFLAGS -s $(var LIBS) $(var SSHDLIBS) $(var CHANNELLIBS)
-    for entry in $TOOLS; do
-      name="${entry%%:*}"
-      case "$name" in
-        ssh) ;;
-        sshd) ln -s ../bin/ssh "$DIST/sbin/$name" ;;
-        scp | sftp | ssh-add | ssh-agent | ssh-keygen | ssh-keyscan) ln -s ssh "$DIST/bin/$name" ;;
-        *) ln -s ../bin/ssh "$DIST/libexec/$name" ;;
-      esac
-    done
-  else
-    cp ssh scp sftp ssh-add ssh-agent ssh-keygen ssh-keyscan "$DIST/bin/"
-    cp sshd "$DIST/sbin/"
-    cp sshd-session sshd-auth sftp-server ssh-keysign ssh-pkcs11-helper ssh-sk-helper \
-      "$DIST/libexec/"
-  fi
+    else
+      # the file of main is compiled again with another name for it
+      main_file="$name-main"
+      [ "$name" = sftp-server ] || main_file="$name"
+      rm -f "$main_file.o"
+      "$MAKE" "$main_file.o" CFLAGS="$(var CFLAGS) -Dmain=$sym" >/dev/null
+      ld -r -o "$MULTI/$name.o" -exported_symbol "_$sym" $(var "${entry##*:}") \
+        -L. -Lopenbsd-compat -lssh -lopenbsd-compat
+      # the export list may not be applied to objects, then nmedit makes the others local
+      if [ "$(nm -gU "$MULTI/$name.o" | grep -c ' T \| D \| S \| B ')" != 1 ]; then
+        echo "_$sym" >"$MULTI/$name.exports"
+        nmedit -s "$MULTI/$name.exports" "$MULTI/$name.o"
+      fi
+    fi
+    objects="$objects $MULTI/$name.o"
+  done
+  # shellcheck disable=SC2046,SC2086
+  $CC -O2 -o "$DIST/bin/ssh" "$MULTI/multi.c" $objects $LDSTATIC -L"$PREFIX/lib" \
+    $GC_LDFLAGS -s $(var LIBS) $(var SSHDLIBS) $(var CHANNELLIBS)
+  for entry in $TOOLS; do
+    name="${entry%%:*}"
+    case "$name" in
+      ssh) ;;
+      sshd) ln -s ../bin/ssh "$DIST/sbin/$name" ;;
+      scp | sftp | ssh-add | ssh-agent | ssh-keygen | ssh-keyscan) ln -s ssh "$DIST/bin/$name" ;;
+      *) ln -s ../bin/ssh "$DIST/libexec/$name" ;;
+    esac
+  done
 
   for section in 1 5 8; do
     mkdir -p "$DIST/share/man/man$section"
