@@ -42,6 +42,14 @@ done
 test -x "$DIST/sbin/sshd" || fail "sshd is missing"
 pass "has the suite"
 
+# a system ssh_config that sets GSSAPI, which this build lacks, must not make ssh complain
+gssapi_config="$(mktemp)"
+printf 'Host *\n  GSSAPIAuthentication yes\n  GSSAPIDelegateCredentials no\n' >"$gssapi_config"
+gssapi_out="$("$BIN" -G -F "$gssapi_config" example.com 2>&1)" || fail "ssh -G: $gssapi_out"
+rm -f "$gssapi_config"
+echo "$gssapi_out" | grep -qi 'unsupported' && fail "ssh reports GSSAPI options: $gssapi_out"
+pass "ignores GSSAPI options of a config"
+
 # keys of all types, and a signature that verifies
 for type in ed25519 ecdsa rsa; do
   "$DIST/bin/ssh-keygen" -q -t "$type" -N '' -f "$TMP/key-$type" || fail "ssh-keygen -t $type"

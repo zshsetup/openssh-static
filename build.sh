@@ -136,6 +136,11 @@ echo ">>> openssh"
   cd openssh
   # the copy of the sources has new timestamps, which make a shipped configure stale
   autoreconf -fi >/dev/null 2>&1
+  # there is no GSSAPI, and the system ssh_config of many hosts sets it, which ssh would report
+  # as an unsupported option on each start
+  sed -i.bak -e 's/\("gssapiauthentication", \)oUnsupported/\1oIgnore/' \
+    -e 's/\("gssapidelegatecredentials", \)oUnsupported/\1oIgnore/' readconf.c
+  grep -q '"gssapiauthentication", oIgnore' readconf.c
   [ -f Makefile ] && "$MAKE" distclean >/dev/null 2>&1 || true
   LIBS=""
   [ "$OS" = Linux ] && LIBS="-lpthread"
