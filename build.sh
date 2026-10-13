@@ -200,7 +200,7 @@ EOF
       main_file="$name-main"
       [ "$name" = sftp-server ] || main_file="$name"
       rm -f "$main_file.o"
-      "$MAKE" "$main_file.o" CFLAGS="$(var CFLAGS) -Dmain=$sym" >/dev/null
+      "$MAKE" "$main_file.o" SSH_PROGRAM=ssh CFLAGS="$(var CFLAGS) -Dmain=$sym" >/dev/null
       ld -r -o "$MULTI/$name.o" -exported_symbol "_$sym" $(var "${entry##*:}") \
         -L. -Lopenbsd-compat -lssh -lopenbsd-compat
       # the export list may not be applied to objects, then nmedit makes the others local

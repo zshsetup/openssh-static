@@ -9,11 +9,20 @@ Portable builds of [OpenSSH](https://www.openssh.com/), the secure shell suite (
 - Linux musl (`--static`): fully static, no runtime dependencies at all (e.g. Alpine)
 - macOS: only libSystem is dynamic (it ships with macOS, which has no fully static binaries)
 
+All tools are a single binary, `bin/ssh`, that runs as the tool whose name it is called with (like
+BusyBox), so that OpenSSL and zlib are linked in once. The other names in `bin`, `sbin`, and
+`libexec` are symlinks to it, so copy or link the names that you need together with `ssh`, or
+use the symlinks of the archive; called by a name that is not a tool, it prints a message and exits.
+
 The build has no PAM, no Kerberos, no SELinux, and no built-in FIDO support (security keys work
-through a `SecurityKeyProvider`). `sshd` is built, but not configured: it needs a host key and a
-config file (`-h`, `-f`). It starts `sshd-session` and `sshd-auth` from the prefix it was compiled
-for, so point it to `libexec` with `-o SshdSessionPath=...` and `-o SshdAuthPath=...`. The system
-config of `ssh` is `/etc/ssh`, and `-F` selects another file.
+through a `SecurityKeyProvider`). OpenSSL is built without DSA, TLS, and legacy ciphers (Blowfish,
+CAST, RC2, RC4, IDEA, SEED, Camellia, and ARIA), none of which OpenSSH uses by default. `scp` and
+`sftp` start the `ssh` found in `PATH`, not one at a compiled-in path.
+
+`sshd` is built, but not configured: it needs a host key and a config file (`-h`, `-f`). It starts
+`sshd-session` and `sshd-auth` from the prefix it was compiled for, so point it to `libexec` with
+`-o SshdSessionPath=...` and `-o SshdAuthPath=...`. The system config of `ssh` is `/etc/ssh`, and
+`-F` selects another file.
 
 ## Prerequisites
 
@@ -37,10 +46,10 @@ cd openssh-static
 
 Output is installed under `dist/`:
 
-- `dist/bin`: `ssh`, `scp`, `sftp`, `ssh-add`, `ssh-agent`, `ssh-keygen`, `ssh-keyscan`; on Linux,
-  `ssh` is a single binary with all tools and the others are symlinks to it that run by their name
-- `dist/sbin/sshd`: the server
-- `dist/libexec`: the parts of `sshd` and the helper programs of the suite
+- `dist/bin/ssh`: the binary with all tools; copy it anywhere on your `PATH`, and the tools you
+  need as symlinks to it (`scp`, `sftp`, `ssh-add`, `ssh-agent`, `ssh-keygen`, `ssh-keyscan`)
+- `dist/sbin/sshd`: a symlink for the server
+- `dist/libexec`: symlinks for the parts of `sshd` and the helper programs of the suite
 - `dist/share/man`: the man pages
 
 Pass `--static` for the fully static musl build on Linux (output in `dist-static/`), `--clean` to
