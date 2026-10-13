@@ -1,0 +1,9 @@
+# Changes here will be overwritten by Copier
+_commit: 651b300
+_src_path: gh:audivir/copier-template
+description: Static build of the OpenSSH suite with OpenSSL and zlib linked in
+github_org: zshsetup
+project_name: openssh-static
+project_slug: openssh_static
+project_type: shell
+publishable: false

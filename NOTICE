@@ -1,0 +1,26 @@
+The code in this repository (build.sh, tests/, README.md) is licensed under the MIT License;
+see LICENSE.
+
+The ssh binaries produced by build.sh and published under GitHub Releases embed or are built
+from the following third-party projects, vendored unmodified as git submodules under vendor/ at
+their release tags. Each keeps its own license, and the binaries are governed by the licenses of
+these projects, not by the MIT License above.
+
+OpenSSH
+  https://www.openssh.com/
+  Copyright (c) Tatu Ylonen, Theo de Raadt, Markus Friedl, and the OpenSSH developers
+  License: BSD-style and ISC (see LICENCE in the sources)
+
+OpenSSL
+  https://www.openssl.org/
+  Copyright (c) The OpenSSL Project Authors
+  License: Apache-2.0 (see LICENSE.txt in the sources)
+
+zlib
+  https://zlib.net/
+  Copyright (c) Jean-loup Gailly and Mark Adler
+  License: zlib license
+
+Anyone who redistributes these binaries (including the release archives from this repo) must
+satisfy these licenses, such as keeping their notices attached. The release workflow attaches the
+exact vendored sources used for the build (openssh-static-sources.tar.gz) to every release.

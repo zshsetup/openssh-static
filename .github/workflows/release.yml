@@ -1,0 +1,82 @@
+name: Release
+on:
+  release:
+    types: [published]
+permissions:
+  contents: write
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check that the release tag matches VERSION, the tag checked out in vendor/openssh
+        run: |
+          if [ "$(cat VERSION)" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Release tag $GITHUB_REF_NAME does not match VERSION ($(cat VERSION))"
+            exit 1
+          fi
+  build:
+    needs: check-version
+    strategy:
+      matrix:
+        include:
+          - os: macos-15
+            asset: macos-arm64
+          - os: ubuntu-latest
+            asset: linux-amd64
+          - os: ubuntu-24.04-arm
+            asset: linux-arm64
+          - os: ubuntu-latest
+            asset: linux-musl-amd64
+            static: true
+          - os: ubuntu-24.04-arm
+            asset: linux-musl-arm64
+            static: true
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: .github/scripts/fetch-submodules.sh
+      - uses: mlugg/setup-zig@v2.2.1
+        with:
+          version: 0.15.2
+      - name: Install build tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y autoconf automake
+      - name: Install build tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install autoconf automake
+      - run: ./build.sh ${{ matrix.static && '--static' || '' }}
+      - name: Package openssh
+        run: |
+          dist="dist${{ matrix.static && '-static' || '' }}"
+          # the license texts travel with the binaries
+          lic="$dist/share/licenses/openssh-static"
+          mkdir -p "$lic"
+          cp LICENSE NOTICE "$lic/"
+          for dir in vendor/*/; do
+            for file in "$dir"LICENSE* "$dir"LICENCE* "$dir"COPYING*; do
+              [ -f "$file" ] && cp "$file" "$lic/$(basename "$dir")-$(basename "$file")" || true
+            done
+          done
+          tar -czf openssh-static-${{ matrix.asset }}.tar.gz -C "$dist" bin sbin libexec share
+      - name: Collect sources
+        if: matrix.asset == 'linux-amd64'
+        run: tar -czf openssh-static-sources.tar.gz --exclude=.git vendor
+      - uses: actions/upload-artifact@v7
+        with:
+          name: openssh-static-${{ matrix.asset }}
+          path: openssh-static-*.tar.gz
+          retention-days: 1
+  release:
+    name: Upload to GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: openssh-static-*
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*

@@ -1,0 +1,12 @@
+[submodule "vendor/openssh"]
+    path = vendor/openssh
+    url = https://github.com/openssh/openssh-portable.git
+    shallow = true
+[submodule "vendor/openssl"]
+    path = vendor/openssl
+    url = https://github.com/openssl/openssl.git
+    shallow = true
+[submodule "vendor/zlib"]
+    path = vendor/zlib
+    url = https://github.com/madler/zlib.git
+    shallow = true

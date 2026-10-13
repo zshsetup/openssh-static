@@ -1,0 +1,21 @@
+# editors
+.idea/
+.vscode/
+
+# os
+.DS_Store
+Thumbs.db
+
+# environment variables
+.env
+env/
+
+# custom exclusions
+
+# build output
+build/
+build-static/
+dist/
+dist-static/
+*.log
+.zig-cache/
