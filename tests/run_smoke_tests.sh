@@ -79,7 +79,7 @@ EOF
   [ "$out" = pmg-ssh ] || fail "ssh output: $out"
   pass "runs a command through ssh"
   # shellcheck disable=SC2086
-  "$DIST/bin/sftp" $opts -b - 127.0.0.1 >/dev/null 2>&1 <<EOF || fail "sftp failed"
+  "$DIST/bin/sftp" -v $opts -b - 127.0.0.1 >"$TMP/sftp.log" 2>&1 <<EOF || fail "sftp failed: $(tail -n 25 "$TMP/sftp.log") $(tail -n 10 "$TMP/sshd.log")"
 get $TMP/data $TMP/data.copy
 EOF
   [ "$(cat "$TMP/data.copy")" = pmg ] || fail "sftp copy: $(cat "$TMP/data.copy")"
