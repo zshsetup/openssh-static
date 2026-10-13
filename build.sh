@@ -118,14 +118,16 @@ echo ">>> openssl"
 (
   cd openssl
   [ -f Makefile ] && "$MAKE" distclean >/dev/null 2>&1 || true
-  # OpenSSH only needs libcrypto, and none of its legacy and TLS parts
-  ./Configure no-shared no-dso no-tests no-docs no-apps no-module no-engine no-legacy no-comp \
-    no-ssl no-tls no-dtls no-ocsp no-ts no-cms no-srp no-psk no-ct no-sctp no-quic no-srtp \
+  # OpenSSH only needs libcrypto, the openssl tool also libssl; without legacy and rarely used parts
+  ./Configure no-shared no-dso no-tests no-docs no-module no-engine no-legacy no-comp \
+    no-ocsp no-ts no-cms no-srp no-psk no-ct no-sctp no-quic no-srtp \
     no-dsa no-ec2m no-rfc3779 no-gost no-idea no-seed no-rc2 no-rc4 no-rc5 no-md2 no-md4 no-mdc2 \
     no-whirlpool no-bf no-cast no-camellia no-aria no-sm2 no-sm3 no-sm4 no-cmac no-siphash \
-    --prefix="$PREFIX" --libdir=lib CC="$CC" AR="$AR" RANLIB="$RANLIB" \
+    --prefix="$PREFIX" --libdir=lib --openssldir=/etc/ssl CC="$CC" AR="$AR" RANLIB="$RANLIB" \
     CFLAGS="-Os $GC_CFLAGS" >/dev/null
   "$MAKE" -j"$JOBS" build_libs >/dev/null
+  # the objects of the openssl tool, which is linked into the binary of OpenSSH
+  "$MAKE" -j"$JOBS" apps/openssl >/dev/null
   "$MAKE" install_dev >/dev/null
 )
 
@@ -160,7 +162,7 @@ echo ">>> openssh"
   TOOLS="$TOOLS scp:SCP_OBJS sftp:SFTP_OBJS sftp-server:SFTPSERVER_OBJS ssh-add:SSHADD_OBJS"
   TOOLS="$TOOLS ssh-agent:SSHAGENT_OBJS ssh-keygen:SSHKEYGEN_OBJS ssh-keyscan:SSHKEYSCAN_OBJS"
   TOOLS="$TOOLS ssh-keysign:SSHKEYSIGN_OBJS ssh-pkcs11-helper:P11HELPER_OBJS"
-  TOOLS="$TOOLS ssh-sk-helper:SKHELPER_OBJS"
+  TOOLS="$TOOLS ssh-sk-helper:SKHELPER_OBJS openssl:-"
   {
     echo 'int main(int, char **);'
     for entry in $TOOLS; do echo "int ${entry%%:*}_multi_main(int, char **);" | tr - _; done
@@ -187,6 +189,7 @@ EOF
   objects=""
   for entry in $TOOLS; do
     name="${entry%%:*}"
+    [ "$name" = openssl ] && continue
     sym="$(echo "$name" | tr - _)_multi_main"
     # shellcheck disable=SC2046
     if [ "$OS" = Linux ]; then
@@ -211,6 +214,27 @@ EOF
     fi
     objects="$objects $MULTI/$name.o"
   done
+  # the openssl tool, from its objects and the libraries they need
+  OSSL="$WORK/src/openssl"
+  if [ "$OS" != Linux ]; then
+    rm -f "$OSSL/apps/openssl-bin-openssl.o"
+    "$MAKE" -C "$OSSL" apps/openssl-bin-openssl.o CPPFLAGS="-Dmain=openssl_multi_main" >/dev/null
+  fi
+  OSSL_OBJS="$(cd "$OSSL" && find apps -name 'openssl-bin-*.o' | sort | sed "s|^|$OSSL/|")"
+  # shellcheck disable=SC2086
+  if [ "$OS" = Linux ]; then
+    ld -r -o "$MULTI/openssl.o" $OSSL_OBJS "$OSSL/apps/libapps.a" "$OSSL/libssl.a"
+    objcopy --redefine-sym main=openssl_multi_main --keep-global-symbol=openssl_multi_main \
+      --keep-global-symbol=__llvm_retpoline_r11 "$MULTI/openssl.o"
+  else
+    ld -r -o "$MULTI/openssl.o" -exported_symbol _openssl_multi_main $OSSL_OBJS \
+      "$OSSL/apps/libapps.a" "$OSSL/libssl.a"
+    if [ "$(nm -gU "$MULTI/openssl.o" | grep -c ' T \| D \| S \| B ')" != 1 ]; then
+      echo _openssl_multi_main >"$MULTI/openssl.exports"
+      nmedit -s "$MULTI/openssl.exports" "$MULTI/openssl.o"
+    fi
+  fi
+  objects="$objects $MULTI/openssl.o"
   # shellcheck disable=SC2046,SC2086
   $CC -O2 -o "$DIST/bin/ssh" "$MULTI/multi.c" $objects $LDSTATIC -L"$PREFIX/lib" \
     $GC_LDFLAGS -s $(var LIBS) $(var SSHDLIBS) $(var CHANNELLIBS)
@@ -219,7 +243,7 @@ EOF
     case "$name" in
       ssh) ;;
       sshd) ln -s ../bin/ssh "$DIST/sbin/$name" ;;
-      scp | sftp | ssh-add | ssh-agent | ssh-keygen | ssh-keyscan) ln -s ssh "$DIST/bin/$name" ;;
+      scp | sftp | ssh-add | ssh-agent | ssh-keygen | ssh-keyscan | openssl) ln -s ssh "$DIST/bin/$name" ;;
       *) ln -s ../bin/ssh "$DIST/libexec/$name" ;;
     esac
   done

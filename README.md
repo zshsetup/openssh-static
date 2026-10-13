@@ -1,7 +1,7 @@
 # openssh-static
 
 Portable builds of [OpenSSH](https://www.openssh.com/), the secure shell suite (`ssh`, `scp`, `sftp`, `ssh-keygen`,
-`ssh-agent`, `ssh-add`, `ssh-keyscan`, and `sshd`), with [OpenSSL](https://www.openssl.org/) and
+`ssh-agent`, `ssh-add`, `ssh-keyscan`, and `sshd`) and the `openssl` tool, with [OpenSSL](https://www.openssl.org/) and
 [zlib](https://zlib.net/) linked in statically, built with [zig](https://ziglang.org) as the C toolchain.
 
 - Linux glibc: only glibc is linked dynamically, and only symbols up to glibc 2.17, so the
@@ -15,9 +15,12 @@ BusyBox), so that OpenSSL and zlib are linked in once. The other names in `bin`,
 use the symlinks of the archive; called by a name that is not a tool, it prints a message and exits.
 
 The build has no PAM, no Kerberos, no SELinux, and no built-in FIDO support (security keys work
-through a `SecurityKeyProvider`). OpenSSL is built without DSA, TLS, and legacy ciphers (Blowfish,
-CAST, RC2, RC4, IDEA, SEED, Camellia, and ARIA), none of which OpenSSH uses by default. `scp` and
-`sftp` start the `ssh` found in `PATH`, not one at a compiled-in path.
+through a `SecurityKeyProvider`). `scp` and `sftp` start the `ssh` found in `PATH`, not one at a
+compiled-in path.
+
+`openssl` is another name of the binary, with TLS (`s_client`, `s_server`) but without the
+commands for OCSP, time stamps, CMS, DSA, and the legacy ciphers (Blowfish, CAST, RC2, RC4, IDEA,
+SEED, Camellia, and ARIA). Its configuration and certificates are in `/etc/ssl`.
 
 `sshd` is built, but not configured: it needs a host key and a config file (`-h`, `-f`). It starts
 `sshd-session` and `sshd-auth` from the prefix it was compiled for, so point it to `libexec` with
@@ -47,7 +50,8 @@ cd openssh-static
 Output is installed under `dist/`:
 
 - `dist/bin/ssh`: the binary with all tools; copy it anywhere on your `PATH`, and the tools you
-  need as symlinks to it (`scp`, `sftp`, `ssh-add`, `ssh-agent`, `ssh-keygen`, `ssh-keyscan`)
+  need as symlinks to it (`scp`, `sftp`, `ssh-add`, `ssh-agent`, `ssh-keygen`, `ssh-keyscan`,
+  `openssl`)
 - `dist/sbin/sshd`: a symlink for the server
 - `dist/libexec`: symlinks for the parts of `sshd` and the helper programs of the suite
 - `dist/share/man`: the man pages

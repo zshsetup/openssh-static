@@ -53,6 +53,26 @@ echo "pmg $(cat "$TMP/key-ed25519.pub")" >"$TMP/signers"
   <"$TMP/data" >/dev/null || fail "verify"
 pass "generates keys, signs, and verifies"
 
+# the openssl tool makes a certificate, and speaks TLS with its own server
+ossl="$DIST/bin/openssl"
+"$ossl" version | grep -q '^OpenSSL ' || fail "openssl version"
+"$ossl" req -x509 -newkey ed25519 -nodes -keyout "$TMP/tls.key" -out "$TMP/tls.crt" \
+  -subj /CN=localhost -days 1 2>/dev/null || fail "openssl req"
+"$ossl" x509 -in "$TMP/tls.crt" -noout -subject | grep -q CN=localhost || fail "openssl x509"
+pass "makes a certificate with openssl"
+tls_port=$((40000 + $$ % 20000))
+"$ossl" s_server -accept "$tls_port" -cert "$TMP/tls.crt" -key "$TMP/tls.key" -naccept 1 -quiet \
+  >/dev/null 2>&1 &
+tls_pid=$!
+out=""
+for _ in 1 2 3 4 5; do
+  sleep 1
+  out="$(echo | "$ossl" s_client -connect "127.0.0.1:$tls_port" -brief 2>&1)" && break
+done
+kill "$tls_pid" 2>/dev/null || true
+case "$out" in *TLSv1.3*) ;; *) fail "openssl s_client: $out" ;; esac
+pass "speaks TLS with openssl s_server and s_client"
+
 # connects to a local sshd as the current user, runs a command, and copies a file through sftp
 if [ "$(id -u)" != 0 ]; then
   cp "$TMP/key-ed25519.pub" "$TMP/authorized_keys"
