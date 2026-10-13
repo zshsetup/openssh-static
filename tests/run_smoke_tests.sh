@@ -57,7 +57,7 @@ pass "generates keys, signs, and verifies"
 ossl="$DIST/bin/openssl"
 "$ossl" version | grep -q '^OpenSSL ' || fail "openssl version"
 "$ossl" req -x509 -newkey ed25519 -nodes -keyout "$TMP/tls.key" -out "$TMP/tls.crt" \
-  -subj /CN=localhost -days 1 2>/dev/null || fail "openssl req"
+  -subj /CN=localhost -days 1 >"$TMP/req.log" 2>&1 || fail "openssl req: $(cat "$TMP/req.log")"
 "$ossl" x509 -in "$TMP/tls.crt" -noout -subject | grep -q CN=localhost || fail "openssl x509"
 pass "makes a certificate with openssl"
 tls_port=$((40000 + $$ % 20000))
