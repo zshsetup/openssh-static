@@ -101,10 +101,15 @@ prepare openssh
 prepare openssl
 prepare zlib
 
+# drops unused functions at link time
+GC_CFLAGS="-ffunction-sections -fdata-sections"
+GC_LDFLAGS="-Wl,--gc-sections"
+[ "$OS" = Darwin ] && GC_LDFLAGS="-Wl,-dead_strip"
+
 echo ">>> zlib"
 (
   cd zlib
-  CFLAGS="-Os" ./configure --static --prefix="$PREFIX" >/dev/null
+  CFLAGS="-Os $GC_CFLAGS" ./configure --static --prefix="$PREFIX" >/dev/null
   "$MAKE" -j"$JOBS" libz.a
   "$MAKE" install >/dev/null
 )
@@ -113,9 +118,13 @@ echo ">>> openssl"
 (
   cd openssl
   [ -f Makefile ] && "$MAKE" distclean >/dev/null 2>&1 || true
-  # OpenSSH only needs libcrypto
+  # OpenSSH only needs libcrypto, and none of its legacy and TLS parts
   ./Configure no-shared no-dso no-tests no-docs no-apps no-module no-engine no-legacy no-comp \
-    --prefix="$PREFIX" --libdir=lib CC="$CC" AR="$AR" RANLIB="$RANLIB" CFLAGS="-Os" >/dev/null
+    no-ssl no-tls no-dtls no-ocsp no-ts no-cms no-srp no-psk no-ct no-sctp no-quic no-srtp \
+    no-dsa no-ec2m no-rfc3779 no-gost no-idea no-seed no-rc2 no-rc4 no-rc5 no-md2 no-md4 no-mdc2 \
+    no-whirlpool no-bf no-cast no-camellia no-aria no-sm2 no-sm3 no-sm4 no-cmac no-siphash \
+    --prefix="$PREFIX" --libdir=lib CC="$CC" AR="$AR" RANLIB="$RANLIB" \
+    CFLAGS="-Os $GC_CFLAGS" >/dev/null
   "$MAKE" -j"$JOBS" build_libs >/dev/null
   "$MAKE" install_dev >/dev/null
 )
@@ -130,16 +139,83 @@ echo ">>> openssh"
   [ "$OS" = Linux ] && LIBS="-lpthread"
   ./configure --prefix=/usr/local --sysconfdir=/etc/ssh --with-ssl-dir="$PREFIX" \
     --with-zlib="$PREFIX" --without-pam --without-selinux --without-kerberos5 --disable-strip \
-    CFLAGS="-Os" CPPFLAGS="-I$PREFIX/include" LDFLAGS="$LDSTATIC -L$PREFIX/lib -s" \
-    LIBS="$LIBS" >/dev/null
+    CFLAGS="-Os $GC_CFLAGS" CPPFLAGS="-I$PREFIX/include" \
+    LDFLAGS="$LDSTATIC -L$PREFIX/lib $GC_LDFLAGS -s" LIBS="$LIBS" >/dev/null
   # scp and sftp run the ssh of the prefix, which the archive is not at, so they use PATH
   "$MAKE" -j"$JOBS" SSH_PROGRAM=ssh >/dev/null
   rm -rf "$DIST"
   mkdir -p "$DIST/bin" "$DIST/sbin" "$DIST/libexec"
-  cp ssh scp sftp ssh-add ssh-agent ssh-keygen ssh-keyscan "$DIST/bin/"
-  cp sshd "$DIST/sbin/"
-  cp sshd-session sshd-auth sftp-server ssh-keysign ssh-pkcs11-helper ssh-sk-helper \
-    "$DIST/libexec/"
+
+  if [ "$OS" = Linux ]; then
+    # one binary with all tools, which links libcrypto and zlib once; the tools are symlinks to it
+    # and run by the name they are called with. Each tool is linked to a single object with the
+    # parts of libssh it needs, whose symbols are local but its main, as the tools define globals
+    # with the same names, and libssh calls functions that each tool defines in its own way.
+    MULTI="$WORK/multi"
+    rm -rf "$MULTI"
+    mkdir -p "$MULTI"
+    # shellcheck disable=SC2016
+    printf 'print-%%:\n\t@echo $($*)\n' >"$MULTI/print.mk"
+    var() { "$MAKE" -s -f Makefile -f "$MULTI/print.mk" "print-$1" 2>/dev/null; }
+    TOOLS="ssh:SSHOBJS sshd:SSHDOBJS sshd-session:SSHD_SESSION_OBJS sshd-auth:SSHD_AUTH_OBJS"
+    TOOLS="$TOOLS scp:SCP_OBJS sftp:SFTP_OBJS sftp-server:SFTPSERVER_OBJS ssh-add:SSHADD_OBJS"
+    TOOLS="$TOOLS ssh-agent:SSHAGENT_OBJS ssh-keygen:SSHKEYGEN_OBJS ssh-keyscan:SSHKEYSCAN_OBJS"
+    TOOLS="$TOOLS ssh-keysign:SSHKEYSIGN_OBJS ssh-pkcs11-helper:P11HELPER_OBJS"
+    TOOLS="$TOOLS ssh-sk-helper:SKHELPER_OBJS"
+    {
+      echo 'int main(int, char **);'
+      for entry in $TOOLS; do echo "int ${entry%%:*}_main(int, char **);" | tr - _; done
+      echo '#include <string.h>'
+      echo '#include <stdio.h>'
+      echo 'static const struct { const char *name; int (*main)(int, char **); } tools[] = {'
+      for entry in $TOOLS; do
+        name="${entry%%:*}"
+        echo "  { \"$name\", $(echo "$name" | tr - _)_main },"
+      done
+      echo '};'
+      cat <<'EOF'
+int main(int argc, char **argv) {
+  const char *name = argc > 0 ? strrchr(argv[0], '/') : NULL;
+  name = name ? name + 1 : (argc > 0 ? argv[0] : "");
+  for (unsigned i = 0; i < sizeof(tools) / sizeof(tools[0]); i++)
+    if (strcmp(name, tools[i].name) == 0)
+      return tools[i].main(argc, argv);
+  fprintf(stderr, "multi-call OpenSSH binary, run it as one of its tools by name\n");
+  return 1;
+}
+EOF
+    } >"$MULTI/multi.c"
+    objects=""
+    for entry in $TOOLS; do
+      name="${entry%%:*}"
+      sym="$(echo "$name" | tr - _)_main"
+      # shellcheck disable=SC2046
+      ld -r -o "$MULTI/$name.o" $(var "${entry##*:}") -L. -Lopenbsd-compat \
+        --start-group -lssh -lopenbsd-compat --end-group
+      # the thunks of retpoline are shared by name
+      objcopy --redefine-sym "main=$sym" --keep-global-symbol="$sym" \
+        --keep-global-symbol=__llvm_retpoline_r11 "$MULTI/$name.o"
+      objects="$objects $MULTI/$name.o"
+    done
+    # shellcheck disable=SC2046,SC2086
+    $CC -O2 -o "$DIST/bin/ssh" "$MULTI/multi.c" $objects $LDSTATIC -L"$PREFIX/lib" \
+      $GC_LDFLAGS -s $(var LIBS) $(var SSHDLIBS) $(var CHANNELLIBS)
+    for entry in $TOOLS; do
+      name="${entry%%:*}"
+      case "$name" in
+        ssh) ;;
+        sshd) ln -s ../bin/ssh "$DIST/sbin/$name" ;;
+        scp | sftp | ssh-add | ssh-agent | ssh-keygen | ssh-keyscan) ln -s ssh "$DIST/bin/$name" ;;
+        *) ln -s ../bin/ssh "$DIST/libexec/$name" ;;
+      esac
+    done
+  else
+    cp ssh scp sftp ssh-add ssh-agent ssh-keygen ssh-keyscan "$DIST/bin/"
+    cp sshd "$DIST/sbin/"
+    cp sshd-session sshd-auth sftp-server ssh-keysign ssh-pkcs11-helper ssh-sk-helper \
+      "$DIST/libexec/"
+  fi
+
   for section in 1 5 8; do
     mkdir -p "$DIST/share/man/man$section"
     cp ./*."$section" "$DIST/share/man/man$section/"

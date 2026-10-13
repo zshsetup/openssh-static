@@ -37,8 +37,8 @@ cd openssh-static
 
 Output is installed under `dist/`:
 
-- `dist/bin`: `ssh`, `scp`, `sftp`, `ssh-add`, `ssh-agent`, `ssh-keygen`, `ssh-keyscan`; copy them
-  anywhere on your `PATH`
+- `dist/bin`: `ssh`, `scp`, `sftp`, `ssh-add`, `ssh-agent`, `ssh-keygen`, `ssh-keyscan`; on Linux,
+  `ssh` is a single binary with all tools and the others are symlinks to it that run by their name
 - `dist/sbin/sshd`: the server
 - `dist/libexec`: the parts of `sshd` and the helper programs of the suite
 - `dist/share/man`: the man pages
