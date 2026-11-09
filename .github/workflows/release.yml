@@ -4,6 +4,8 @@ on:
     types: [published]
 permissions:
   contents: write
+env:
+  RELEASE_SED: 's/^V_\([0-9]*\)_\([0-9]*\)_P\([0-9]*\)$/v\1.\2p\3/'
 jobs:
   check-version:
     runs-on: ubuntu-latest
@@ -11,7 +13,8 @@ jobs:
       - uses: actions/checkout@v7
       - name: Check that the release tag matches VERSION, the tag checked out in vendor/openssh
         run: |
-          if [ "$(cat VERSION)" != "$GITHUB_REF_NAME" ]; then
+          release="$(sed "${RELEASE_SED:-s/^//}" VERSION)"
+          if [ "$release" != "$GITHUB_REF_NAME" ]; then
             echo "::error::Release tag $GITHUB_REF_NAME does not match VERSION ($(cat VERSION))"
             exit 1
           fi
