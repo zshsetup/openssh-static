@@ -77,7 +77,7 @@ they were built from (`openssh-static-sources.tar.gz`).
 
 To update a vendored project, check out a new release tag in its submodule, commit it, and update
 `VERSION` if it is the main one, e.g.
-`git -C vendor/openssh fetch --depth 1 origin tag v10.6p1 && git -C vendor/openssh checkout v10.6p1`.
+`git -C vendor/openssh fetch --depth 1 origin tag V_10_6_P2 && git -C vendor/openssh checkout V_10_6_P2`.
 
 ## Acknowledgments
 
